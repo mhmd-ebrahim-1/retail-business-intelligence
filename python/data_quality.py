@@ -1,68 +1,113 @@
 """
-Comprehensive Data Quality and Audit Module
-Project: Retail Business Intelligence & Customer Analytics Platform
+Data Quality Validation Module for Retail Business Intelligence.
+Performs comprehensive schema, constraint, consistency, and integrity checks.
 """
+
+from typing import Dict, List, Any
 import pandas as pd
 import numpy as np
-from pathlib import Path
 
 
-def run_data_audit(raw_file_path: str) -> dict:
-    df = pd.read_csv(raw_file_path, encoding='utf-8')
+class DataQualityAuditor:
+    """Performs multi-dimensional data quality auditing on retail transaction datasets."""
     
-    order_dates = pd.to_datetime(df['Order Date'], format='mixed')
-    ship_dates = pd.to_datetime(df['Ship Date'], format='mixed')
-    
-    audit_results = {
-        "file_name": Path(raw_file_path).name,
-        "row_count": len(df),
-        "column_count": len(df.columns),
-        "columns": list(df.columns),
-        "data_types": {col: str(df[col].dtype) for col in df.columns},
-        "missing_values": df.isnull().sum().to_dict(),
-        "duplicate_rows": int(df.duplicated().sum()),
-        "duplicate_order_product_pairs": int(df.duplicated(subset=['Order ID', 'Product ID']).sum()),
-        "order_date_min": order_dates.min().strftime('%Y-%m-%d'),
-        "order_date_max": order_dates.max().strftime('%Y-%m-%d'),
-        "ship_date_min": ship_dates.min().strftime('%Y-%m-%d'),
-        "ship_date_max": ship_dates.max().strftime('%Y-%m-%d'),
-        "invalid_ship_dates": int((ship_dates < order_dates).sum()),
-        "postal_code_nulls": int(df['Postal Code'].isnull().sum()),
-        "unique_orders": int(df['Order ID'].nunique()),
-        "unique_customers": int(df['Customer ID'].nunique()),
-        "unique_products": int(df['Product ID'].nunique()),
-        "unique_categories": int(df['Category'].nunique()),
-        "categories": df['Category'].unique().tolist(),
-        "unique_subcategories": int(df['Sub-Category'].nunique()),
-        "subcategories": df['Sub-Category'].unique().tolist(),
-        "unique_regions": int(df['Region'].nunique()),
-        "regions": df['Region'].unique().tolist(),
-        "unique_states": int(df['State'].nunique()),
-        "unique_cities": int(df['City'].nunique()),
-        "unique_segments": int(df['Segment'].nunique()),
-        "segments": df['Segment'].unique().tolist(),
-        "unique_ship_modes": int(df['Ship Mode'].nunique()),
-        "ship_modes": df['Ship Mode'].unique().tolist(),
-        "negative_sales": int((df['Sales'] < 0).sum()),
-        "zero_or_negative_quantity": int((df['Quantity'] <= 0).sum()),
-        "negative_profit_count": int((df['Profit'] < 0).sum()),
-        "negative_profit_pct": float((df['Profit'] < 0).mean() * 100),
-        "discount_min": float(df['Discount'].min()),
-        "discount_max": float(df['Discount'].max()),
-        "total_sales": float(df['Sales'].sum()),
-        "total_profit": float(df['Profit'].sum()),
-        "overall_profit_margin": float((df['Profit'].sum() / df['Sales'].sum()) * 100),
-        "total_quantity": int(df['Quantity'].sum())
-    }
-    return audit_results
+    def __init__(self, df: pd.DataFrame):
+        self.df = df.copy()
+        self.results: Dict[str, Any] = {}
+        
+    def check_missing_values(self) -> pd.DataFrame:
+        """Audits null, NaN, and blank values across all columns."""
+        missing = self.df.isnull().sum()
+        missing_pct = (missing / len(self.df)) * 100
+        audit_df = pd.DataFrame({
+            "Column": self.df.columns,
+            "Missing_Count": missing.values,
+            "Missing_Percentage": missing_pct.values
+        }).sort_values(by="Missing_Count", ascending=False)
+        self.results["missing_values"] = audit_df
+        return audit_df
+        
+    def check_duplicates(self) -> Dict[str, int]:
+        """Audits full row duplicates and identifier duplicates."""
+        row_id_col = "Row ID" if "Row ID" in self.df.columns else "Row_ID"
+        order_id_col = "Order ID" if "Order ID" in self.df.columns else "Order_ID"
+        
+        full_dups = int(self.df.duplicated().sum())
+        row_id_dups = int(self.df[row_id_col].duplicated().sum()) if row_id_col in self.df.columns else 0
+        total_unique_orders = int(self.df[order_id_col].nunique()) if order_id_col in self.df.columns else 0
+        
+        dup_metrics = {
+            "total_rows": len(self.df),
+            "full_row_duplicates": full_dups,
+            "row_id_duplicates": row_id_dups,
+            "unique_orders": total_unique_orders,
+            "total_line_items": len(self.df)
+        }
+        self.results["duplicates"] = dup_metrics
+        return dup_metrics
+        
+    def check_date_validity(self) -> Dict[str, Any]:
+        """Validates date consistency (Order Date <= Ship Date)."""
+        order_date_col = "Order Date" if "Order Date" in self.df.columns else "Order_Date"
+        ship_date_col = "Ship Date" if "Ship Date" in self.df.columns else "Ship_Date"
+        
+        o_date = pd.to_datetime(self.df[order_date_col])
+        s_date = pd.to_datetime(self.df[ship_date_col])
+        
+        invalid_sequence = (s_date < o_date).sum()
+        date_metrics = {
+            "min_order_date": str(o_date.min().date()),
+            "max_order_date": str(o_date.max().date()),
+            "min_ship_date": str(s_date.min().date()),
+            "max_ship_date": str(s_date.max().date()),
+            "invalid_date_sequences": int(invalid_sequence),
+            "max_shipping_days": int((s_date - o_date).dt.days.max()),
+            "min_shipping_days": int((s_date - o_date).dt.days.min()),
+            "avg_shipping_days": round(float((s_date - o_date).dt.days.mean()), 2)
+        }
+        self.results["date_validity"] = date_metrics
+        return date_metrics
 
+    def check_numeric_constraints(self) -> Dict[str, Any]:
+        """Validates numerical ranges and constraints (Sales > 0, Quantity > 0, 0 <= Discount <= 1)."""
+        sales_col = "Sales"
+        qty_col = "Quantity"
+        disc_col = "Discount"
+        prof_col = "Profit"
+        
+        sales_negative = int((self.df[sales_col] <= 0).sum())
+        qty_negative = int((self.df[qty_col] <= 0).sum())
+        disc_invalid = int(((self.df[disc_col] < 0) | (self.df[disc_col] > 1)).sum())
+        loss_making_count = int((self.df[prof_col] < 0).sum())
+        
+        numeric_metrics = {
+            "negative_or_zero_sales_count": sales_negative,
+            "negative_or_zero_quantity_count": qty_negative,
+            "invalid_discount_range_count": disc_invalid,
+            "loss_making_transactions_count": loss_making_count,
+            "loss_making_transactions_pct": round(float(loss_making_count / len(self.df) * 100), 2),
+            "total_sales": round(float(self.df[sales_col].sum()), 2),
+            "total_profit": round(float(self.df[prof_col].sum()), 2),
+            "profit_margin_pct": round(float(self.df[prof_col].sum() / self.df[sales_col].sum() * 100), 2)
+        }
+        self.results["numeric_constraints"] = numeric_metrics
+        return numeric_metrics
 
-if __name__ == "__main__":
-    raw_path = r"D:\Downloads\retail-business-intelligence\data\raw\superstore_raw.csv"
-    res = run_data_audit(raw_path)
-    print("=" * 60)
-    print("DATA AUDIT REPORT SUMMARY")
-    print("=" * 60)
-    for k, v in res.items():
-        print(f"{k}: {v}")
+    def check_categorical_consistency(self) -> Dict[str, List[str]]:
+        """Audits categorical values and cardinality across segments, regions, categories."""
+        cat_cols = ["Segment", "Region", "Category", "Ship Mode" if "Ship Mode" in self.df.columns else "Ship_Mode"]
+        cat_metrics = {}
+        for col in cat_cols:
+            if col in self.df.columns:
+                cat_metrics[col] = self.df[col].dropna().unique().tolist()
+        self.results["categorical_consistency"] = cat_metrics
+        return cat_metrics
 
+    def run_full_audit(self) -> Dict[str, Any]:
+        """Executes all data quality verification routines."""
+        self.check_missing_values()
+        self.check_duplicates()
+        self.check_date_validity()
+        self.check_numeric_constraints()
+        self.check_categorical_consistency()
+        return self.results

@@ -1,114 +1,88 @@
 """
-Data Loader Module
-Provides standard functions to load raw, cleaned, enriched, and processed datasets.
-Project: Retail Business Intelligence & Customer Analytics Platform
+Data Loader Module for Retail Business Intelligence & Customer Analytics.
+Provides robust data ingestion with multi-encoding fallback, schema validation, and path resolution.
 """
+
+import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 import pandas as pd
 
 
-# Project Root Directory & Standard Paths
-BASE_DIR = Path(__file__).resolve().parent.parent
-RAW_DATA_PATH = BASE_DIR / "data" / "raw" / "superstore_raw.csv"
-CLEANED_DATA_PATH = BASE_DIR / "data" / "cleaned" / "superstore_cleaned.csv"
-PROCESSED_DATA_DIR = BASE_DIR / "data" / "processed"
-ENRICHED_DATA_PATH = PROCESSED_DATA_DIR / "superstore_enriched.csv"
+def get_project_root() -> Path:
+    """Returns the absolute path to the project root directory."""
+    return Path(__file__).resolve().parent.parent
 
 
-def load_raw_data(file_path: Optional[Path] = None, encoding: str = "utf-8") -> pd.DataFrame:
+def load_raw_data(filepath: Optional[str] = None) -> pd.DataFrame:
     """
-    Load raw Superstore transaction dataset.
+    Loads raw e-commerce transaction dataset with encoding fallbacks.
     
-    Parameters:
-        file_path (Path, optional): Path to raw CSV file.
-        encoding (str): Encoding of raw file.
+    Args:
+        filepath: Optional path to raw CSV. Defaults to 'data/raw/ecommerce_raw.csv'.
         
     Returns:
-        pd.DataFrame: Raw dataset.
+        pd.DataFrame containing raw transactional records.
+        
+    Raises:
+        FileNotFoundError: If the raw data file does not exist.
+        ValueError: If loading fails across all supported encodings.
     """
-    path = file_path or RAW_DATA_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"Raw dataset not found at: {path}")
-    return pd.read_csv(path, encoding=encoding)
-
-
-def load_cleaned_data(file_path: Optional[Path] = None) -> pd.DataFrame:
-    """
-    Load cleaned Superstore transaction dataset with parsed dates and string postal codes.
+    if filepath is None:
+        filepath = os.path.join(get_project_root(), "data", "raw", "ecommerce_raw.csv")
+        
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Raw data file not found at: {filepath}")
+        
+    encodings = ["utf-8", "windows-1252", "latin1", "iso-8859-1", "cp1252"]
     
-    Parameters:
-        file_path (Path, optional): Path to cleaned CSV file.
+    for enc in encodings:
+        try:
+            df = pd.read_csv(filepath, encoding=enc)
+            return df
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            raise RuntimeError(f"Error reading CSV file with encoding {enc}: {e}")
+            
+    # If all encodings fail, read with replace error handler
+    return pd.read_csv(filepath, encoding="utf-8", encoding_errors="replace")
+
+
+def load_processed_data(filepath: Optional[str] = None) -> pd.DataFrame:
+    """
+    Loads cleaned and enriched transaction dataset.
+    
+    Args:
+        filepath: Optional path to processed CSV. Defaults to 'data/processed/ecommerce_clean.csv'.
         
     Returns:
-        pd.DataFrame: Cleaned dataset.
+        pd.DataFrame containing cleaned and feature-engineered records.
     """
-    path = file_path or CLEANED_DATA_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"Cleaned dataset not found at: {path}. Run data_cleaning.py first.")
-    df = pd.read_csv(path, dtype={"postal_code": str})
-    df["order_date"] = pd.to_datetime(df["order_date"])
-    df["ship_date"] = pd.to_datetime(df["ship_date"])
+    if filepath is None:
+        filepath = os.path.join(get_project_root(), "data", "processed", "ecommerce_clean.csv")
+        
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Processed data file not found at: {filepath}")
+        
+    df = pd.read_csv(filepath, parse_dates=["Order_Date", "Ship_Date"])
     return df
 
 
-def load_enriched_data(file_path: Optional[Path] = None) -> pd.DataFrame:
+def save_processed_data(df: pd.DataFrame, filepath: Optional[str] = None) -> str:
     """
-    Load enriched master dataset with engineered analytical features.
+    Saves cleaned dataframe to CSV.
     
-    Parameters:
-        file_path (Path, optional): Path to enriched CSV file.
+    Args:
+        df: DataFrame to save.
+        filepath: Optional output file path. Defaults to 'data/processed/ecommerce_clean.csv'.
         
     Returns:
-        pd.DataFrame: Enriched dataset with datetime features.
+        Saved file path string.
     """
-    path = file_path or ENRICHED_DATA_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"Enriched dataset not found at: {path}. Run feature_engineering.py first.")
-    df = pd.read_csv(path, dtype={"postal_code": str})
-    df["order_date"] = pd.to_datetime(df["order_date"])
-    df["ship_date"] = pd.to_datetime(df["ship_date"])
-    return df
-
-
-def load_processed_table(table_name: str) -> pd.DataFrame:
-    """
-    Load a dimensional or fact table from the processed data directory.
-    
-    Parameters:
-        table_name (str): Name of table (e.g., 'fact_sales', 'dim_customer', 'dim_product', 'dim_geography', 'dim_date', 'dim_ship_mode').
+    if filepath is None:
+        filepath = os.path.join(get_project_root(), "data", "processed", "ecommerce_clean.csv")
         
-    Returns:
-        pd.DataFrame: Table dataframe.
-    """
-    file_path = PROCESSED_DATA_DIR / f"{table_name}.csv"
-    if not file_path.exists():
-        raise FileNotFoundError(f"Processed table '{table_name}' not found at: {file_path}")
-    
-    dtype_dict = {}
-    if table_name in ["dim_geography", "superstore_cleaned", "superstore_enriched"]:
-        dtype_dict["postal_code"] = str
-        
-    return pd.read_csv(file_path, dtype=dtype_dict)
-
-
-def load_rfm_data() -> pd.DataFrame:
-    """
-    Load RFM customer segmentation dataset.
-    
-    Returns:
-        pd.DataFrame: Customer-level RFM scores and segment labels.
-    """
-    return load_processed_table("rfm_customer_segments")
-
-
-if __name__ == "__main__":
-    df_raw = load_raw_data()
-    print(f"Loaded raw data: {df_raw.shape[0]:,} rows, {df_raw.shape[1]} columns")
-    
-    df_clean = load_cleaned_data()
-    print(f"Loaded cleaned data: {df_clean.shape[0]:,} rows, {df_clean.shape[1]} columns")
-    
-    df_rfm = load_rfm_data()
-    print(f"Loaded RFM data: {df_rfm.shape[0]:,} customers across {df_rfm['customer_segment'].nunique()} segments")
-
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    df.to_csv(filepath, index=False, encoding="utf-8")
+    return filepath
