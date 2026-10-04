@@ -1,133 +1,150 @@
-# 🏛️ Power BI Dimensional Data Model Specification
-**Project:** Retail Business Intelligence & Customer Analytics Platform
+# Enterprise Star Schema Data Model Specification
+
+This document details the dimensional modeling architecture designed for Power BI, SQL Server, and analytical data pipelines.
 
 ---
 
 ## 1. Dimensional Model Overview
-The Power BI semantic model is architected as a pure **Star Schema** with 1 Fact Table and 5 Conformed Dimension Tables, ensuring optimal VertiPaq engine compression, rapid query performance, and unambiguous filter propagation.
+
+```
+                                  +-------------------+
+                                  |     DIM_DATE      |
+                                  +-------------------+
+                                  | PK: DateKey       |
+                                  | Date              |
+                                  | Year, Quarter     |
+                                  | Month, MonthName  |
+                                  | DayOfWeek, Week   |
+                                  +---------+---------+
+                                            | 1
+                                            |
+                                            | * (OrderDateKey, ShipDateKey)
++--------------------+            +---------v---------+            +--------------------+
+|    DIM_CUSTOMER    | 1        * |    FACT_SALES     | *        1 |    DIM_PRODUCT     |
++--------------------+------------>-------------------<------------+--------------------+
+| PK: CustomerKey    |            | PK: SalesFactID   |            | PK: ProductKey     |
+| CustomerID (Nat)   |            | FK: OrderDateKey  |            | ProductID (Nat)    |
+| CustomerName       |            | FK: ShipDateKey   |            | ProductName        |
+| Segment            |            | FK: CustomerKey   |            | Category           |
++--------------------+            | FK: ProductKey    |            | SubCategory        |
+                                  | FK: LocationKey   |            +--------------------+
+                                  | FK: ShipModeKey   |
++--------------------+            | Measures:         |            +--------------------+
+|   DIM_GEOGRAPHY    | 1        * |   Sales           | *        1 |   DIM_SHIP_MODE    |
++--------------------+------------>   Quantity        <------------+--------------------+
+| PK: LocationKey    |            |   Discount        |            | PK: ShipModeKey    |
+| Country, Region    |            |   Profit          |            | ShipModeName       |
+| State, City, ZIP   |            |   ShippingDays    |            +--------------------+
++--------------------+            +-------------------+
+```
 
 ---
 
-## 2. Table Definitions & Schemas
+## 2. Table Specifications & Granularity
 
-### A. Fact Table: `fact_sales`
-- **Source File:** `data/processed/fact_sales.csv`
-- **Granularity:** 1 row per individual order line item (9,994 rows)
+### A. Fact Table: `FACT_SALES`
+- **Granularity (Grain):** Individual product item line within an order (1 record per order line).
+- **Primary Key:** `SalesFactID` (Surrogate Key) / Natural key `(Order ID, Product ID)`.
 
-| Column Name | Data Type | Role | Description |
+| Column | Type | Constraint | Role | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `SalesFactID` | `BIGINT` | PK, Identity | Surrogate Key | Unique fact transaction identifier |
+| `OrderDateKey` | `INT` | FK -> `DIM_DATE` | Foreign Key | Integer date key (YYYYMMDD) for order date |
+| `ShipDateKey` | `INT` | FK -> `DIM_DATE` | Foreign Key | Integer date key (YYYYMMDD) for shipment date |
+| `CustomerKey` | `INT` | FK -> `DIM_CUSTOMER` | Foreign Key | Reference to purchasing customer |
+| `ProductKey` | `INT` | FK -> `DIM_PRODUCT` | Foreign Key | Reference to purchased SKU |
+| `LocationKey` | `INT` | FK -> `DIM_GEOGRAPHY` | Foreign Key | Reference to destination geography |
+| `ShipModeKey` | `INT` | FK -> `DIM_SHIP_MODE` | Foreign Key | Reference to shipping method |
+| `Sales` | `DECIMAL(12,4)` | NOT NULL | Additive Measure | Net dollar revenue for line item |
+| `Quantity` | `INT` | NOT NULL | Additive Measure | Units sold |
+| `Discount` | `DECIMAL(6,4)` | NOT NULL | Non-Additive Measure | Promotional discount percentage |
+| `Profit` | `DECIMAL(12,4)` | NOT NULL | Additive Measure | Net dollar contribution margin |
+| `OrderToShipDays` | `INT` | NOT NULL | Additive Measure | Fulfillment lead time (Ship Date - Order Date) |
+| `ProfitMargin` | `DECIMAL(8,4)` | NOT NULL | Semi-Additive Measure | Line-level profit margin ratio |
+
+---
+
+### B. Dimension Tables
+
+#### 1. `DIM_CUSTOMER`
+- **Grain:** 1 record per unique customer (793 records).
+- **Primary Key:** `CustomerKey` (Surrogate Key).
+
+| Column | Type | Constraint | Description |
 | :--- | :--- | :--- | :--- |
-| `sale_id` | Integer | Primary Key | Unique surrogate transaction identifier |
-| `row_id` | Integer | Attribute | Original row identifier |
-| `order_id` | Text | Degenerate Dim | Order tracking code |
-| `order_date_key` | Integer | Foreign Key | Maps to `dim_date[date_key]` |
-| `ship_date_key` | Integer | Foreign Key | Maps to `dim_date[date_key]` (inactive relationship for lead time) |
-| `customer_key` | Integer | Foreign Key | Maps to `dim_customer[customer_key]` |
-| `product_key` | Integer | Foreign Key | Maps to `dim_product[product_key]` |
-| `geography_key` | Integer | Foreign Key | Maps to `dim_geography[geography_key]` |
-| `ship_mode_key` | Integer | Foreign Key | Maps to `dim_ship_mode[ship_mode_key]` |
-| `sales` | Decimal Number (Currency) | Measure | Revenue generated after line-item discount |
-| `quantity` | Whole Number | Measure | Units purchased |
-| `discount` | Decimal Number (Percentage) | Measure | Discount rate applied (0.00 to 0.80) |
-| `profit` | Decimal Number (Currency) | Measure | Net profit or loss for transaction |
-| `ship_days` | Whole Number | Measure | Elapsed days between order date and ship date |
-| `profit_margin` | Decimal Number (Percentage) | Measure | Calculated margin (`profit / sales`) |
-| `profit_status` | Text | Attribute | "Profitable", "Loss-Making", "Breakeven" |
-| `discount_band` | Text | Attribute | Discount classification bucket |
-| `order_value_band` | Text | Attribute | Transaction size bucket |
-| `shipping_delay_category` | Text | Attribute | Shipping speed classification |
+| `CustomerKey` | `INT` | PK | Surrogate primary key |
+| `CustomerID` | `VARCHAR(50)` | Unique, Business Key | Natural customer identifier (e.g. CG-12520) |
+| `CustomerName` | `VARCHAR(100)` | NOT NULL | Full name of customer |
+| `Segment` | `VARCHAR(50)` | NOT NULL | Customer segment (Consumer, Corporate, Home Office) |
+
+#### 2. `DIM_PRODUCT`
+- **Grain:** 1 record per unique product item (1,862 records).
+- **Primary Key:** `ProductKey` (Surrogate Key).
+
+| Column | Type | Constraint | Description |
+| :--- | :--- | :--- | :--- |
+| `ProductKey` | `INT` | PK | Surrogate primary key |
+| `ProductID` | `VARCHAR(50)` | NOT NULL, Business Key | Catalog SKU code |
+| `ProductName` | `VARCHAR(255)` | NOT NULL | Full product descriptive title |
+| `Category` | `VARCHAR(50)` | NOT NULL | Top-level category (Technology, Furniture, Office Supplies) |
+| `SubCategory` | `VARCHAR(50)` | NOT NULL | Granular sub-category (17 items) |
+
+#### 3. `DIM_GEOGRAPHY`
+- **Grain:** 1 record per unique geographic market/location (631 records).
+- **Primary Key:** `LocationKey` (Surrogate Key).
+
+| Column | Type | Constraint | Description |
+| :--- | :--- | :--- | :--- |
+| `LocationKey` | `INT` | PK | Surrogate primary key |
+| `Country` | `VARCHAR(50)` | NOT NULL | Country name (United States) |
+| `Region` | `VARCHAR(50)` | NOT NULL | US Geographic region (West, East, Central, South) |
+| `State` | `VARCHAR(50)` | NOT NULL | US State (49 distinct states) |
+| `City` | `VARCHAR(50)` | NOT NULL | Municipal city (531 cities) |
+| `PostalCode` | `INT` | NULL | 5-digit US ZIP postal code |
+
+#### 4. `DIM_SHIP_MODE`
+- **Grain:** 1 record per fulfillment delivery method (4 records).
+- **Primary Key:** `ShipModeKey` (Surrogate Key).
+
+| Column | Type | Constraint | Description |
+| :--- | :--- | :--- | :--- |
+| `ShipModeKey` | `INT` | PK | Surrogate primary key |
+| `ShipModeName` | `VARCHAR(50)` | NOT NULL, Unique | Standard Class, Second Class, First Class, Same Day |
+
+#### 5. `DIM_DATE`
+- **Grain:** 1 record per calendar day across operating window (1,461 days: 2014-01-01 to 2017-12-31).
+- **Primary Key:** `DateKey` (Integer: YYYYMMDD).
+
+| Column | Type | Constraint | Description |
+| :--- | :--- | :--- | :--- |
+| `DateKey` | `INT` | PK | Integer key (e.g. 20161108) |
+| `FullDate` | `DATE` | NOT NULL, Unique | Standard date representation |
+| `Year` | `INT` | NOT NULL | Calendar year (2014 - 2017) |
+| `Quarter` | `INT` | NOT NULL | Calendar quarter (1 - 4) |
+| `Month` | `INT` | NOT NULL | Month number (1 - 12) |
+| `MonthName` | `VARCHAR(20)` | NOT NULL | Full month name (January - December) |
+| `YearMonth` | `VARCHAR(7)` | NOT NULL | YYYY-MM format |
+| `WeekOfYear` | `INT` | NOT NULL | ISO week number (1 - 53) |
+| `DayOfWeek` | `VARCHAR(20)` | NOT NULL | Monday - Sunday |
+| `IsWeekend` | `BIT` | NOT NULL | 1 if Saturday/Sunday, 0 otherwise |
 
 ---
 
-### B. Dimension Table: `dim_date`
-- **Source File:** `data/processed/dim_date.csv`
-- **Role:** Master calendar table (1,464 daily records from 2014-01-01 to 2018-01-05)
+## 3. Relationship Matrix & Cardinality
 
-| Column Name | Data Type | Description |
-| :--- | :--- | :--- |
-| `date_key` | Whole Number | Surrogate key (YYYYMMDD) - Primary Key |
-| `full_date` | Date | Standard calendar date |
-| `year` | Whole Number | Calendar Year (2014, 2015, 2016, 2017) |
-| `quarter` | Text | Quarter label ('Q1', 'Q2', 'Q3', 'Q4') |
-| `month` | Whole Number | Month number (1 to 12) |
-| `month_name` | Text | Full month name ('January', etc.) - Sorted by `month` |
-| `day` | Whole Number | Day of month |
-| `day_name` | Text | Day name ('Monday', etc.) |
-| `day_of_week` | Whole Number | 1 (Monday) to 7 (Sunday) |
-| `is_weekend` | Whole Number | 1 if Saturday/Sunday, else 0 |
-| `year_month` | Text | Sortable year-month string ('2016-11') |
+| From Table | From Column | To Table | To Column | Cardinality | Filter Direction |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `FACT_SALES` | `OrderDateKey` | `DIM_DATE` | `DateKey` | Many-to-One (*:1) | Single (DIM -> FACT) |
+| `FACT_SALES` | `ShipDateKey` | `DIM_DATE` | `DateKey` | Many-to-One (*:1) | Inactive (Role-Playing) |
+| `FACT_SALES` | `CustomerKey` | `DIM_CUSTOMER` | `CustomerKey` | Many-to-One (*:1) | Single (DIM -> FACT) |
+| `FACT_SALES` | `ProductKey` | `DIM_PRODUCT` | `ProductKey` | Many-to-One (*:1) | Single (DIM -> FACT) |
+| `FACT_SALES` | `LocationKey` | `DIM_GEOGRAPHY` | `LocationKey` | Many-to-One (*:1) | Single (DIM -> FACT) |
+| `FACT_SALES` | `ShipModeKey` | `DIM_SHIP_MODE` | `ShipModeKey` | Many-to-One (*:1) | Single (DIM -> FACT) |
 
 ---
 
-### C. Dimension Table: `dim_customer`
-- **Source File:** `data/processed/dim_customer.csv` (793 distinct customers)
-
-| Column Name | Data Type | Description |
-| :--- | :--- | :--- |
-| `customer_key` | Whole Number | Surrogate Primary Key |
-| `customer_id` | Text | Business Key (e.g., 'CG-12520') |
-| `customer_name` | Text | Full Customer Name |
-| `segment` | Text | Market segment ('Consumer', 'Corporate', 'Home Office') |
-| `first_order_date` | Date | Customer acquisition date |
-| `last_order_date` | Date | Most recent order date |
-| `total_orders` | Whole Number | Lifetime order count |
-| `total_spend` | Decimal Number | Lifetime cumulative revenue |
-| `total_profit` | Decimal Number | Lifetime cumulative profit |
-
----
-
-### D. Dimension Table: `dim_product`
-- **Source File:** `data/processed/dim_product.csv` (1,894 product entities)
-
-| Column Name | Data Type | Description |
-| :--- | :--- | :--- |
-| `product_key` | Whole Number | Surrogate Primary Key |
-| `product_id` | Text | Catalog SKU identifier |
-| `product_name` | Text | Full descriptive product name |
-| `category` | Text | High-level category ('Furniture', 'Office Supplies', 'Technology') |
-| `sub_category` | Text | Sub-category ('Chairs', 'Phones', 'Binders', etc.) |
-
----
-
-### E. Dimension Table: `dim_geography`
-- **Source File:** `data/processed/dim_geography.csv` (632 unique geographic locations)
-
-| Column Name | Data Type | Description |
-| :--- | :--- | :--- |
-| `geography_key` | Whole Number | Surrogate Primary Key |
-| `country` | Text | Country ('United States') |
-| `region` | Text | Sales Region ('Central', 'East', 'South', 'West') |
-| `state` | Text | US State name |
-| `city` | Text | City name |
-| `postal_code` | Text | 5-digit US ZIP Code |
-
----
-
-### F. Dimension Table: `dim_ship_mode`
-- **Source File:** `data/processed/dim_ship_mode.csv` (4 fulfillment tiers)
-
-| Column Name | Data Type | Description |
-| :--- | :--- | :--- |
-| `ship_mode_key` | Whole Number | Surrogate Primary Key |
-| `ship_mode` | Text | 'Standard Class', 'Second Class', 'First Class', 'Same Day' |
-
----
-
-## 3. Relationships & Cardinality Configuration
-
-| From Table (Many Side: *) | Foreign Key | To Table (One Side: 1) | Primary Key | Cardinality | Cross Filter | State |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `fact_sales` | `order_date_key` | `dim_date` | `date_key` | Many to One (*:1) | Single (`dim_date` filters `fact_sales`) | Active |
-| `fact_sales` | `ship_date_key` | `dim_date` | `date_key` | Many to One (*:1) | Single | Inactive |
-| `fact_sales` | `customer_key` | `dim_customer` | `customer_key` | Many to One (*:1) | Single (`dim_customer` filters `fact_sales`) | Active |
-| `fact_sales` | `product_key` | `dim_product` | `product_key` | Many to One (*:1) | Single (`dim_product` filters `fact_sales`) | Active |
-| `fact_sales` | `geography_key` | `dim_geography` | `geography_key` | Many to One (*:1) | Single (`dim_geography` filters `fact_sales`) | Active |
-| `fact_sales` | `ship_mode_key` | `dim_ship_mode` | `ship_mode_key` | Many to One (*:1) | Single (`dim_ship_mode` filters `fact_sales`) | Active |
-
----
-
-## 4. Best Practices Applied
-1. **Star Schema Purity**: No snowflake normalized hierarchies, eliminating expensive multi-hop joins.
-2. **Surrogate Keys**: Fast integer join paths instead of wide composite string comparisons.
-3. **No Bi-Directional Cross-Filtering**: Prevents ambiguous filter paths and keeps DAX context transitions deterministic.
-4. **Dates Table Marked as Official Date Table**: Enables built-in Time Intelligence functions (`TOTALYTD`, `SAMEPERIODLASTYEAR`, `DATEADD`).
-
+## 4. Modeling Best Practices Implemented
+1. **Pure Star Schema:** Avoids slow snowflake joins by denormalizing category into product and state/region into geography.
+2. **Surrogate Keys:** High-performance integer join keys rather than wide composite string natural keys.
+3. **Role-Playing Date Handling:** Active relationship on `OrderDateKey`, inactive relationship on `ShipDateKey` leveraged via DAX `USERELATIONSHIP()`.
+4. **Single-Direction Filtering:** Prevents ambiguous filter paths and bidirectional cross-filtering performance degradation.

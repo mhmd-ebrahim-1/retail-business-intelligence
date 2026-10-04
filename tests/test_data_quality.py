@@ -1,112 +1,113 @@
 """
-Automated Data Quality & Integrity Test Suite
-Project: Retail Business Intelligence & Customer Analytics Platform
-Framework: PyTest
+Automated Data Quality & Pipeline Unit Tests.
+Tests dataset schema, constraints, domain validity, and financial calculations.
 """
+
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import pytest
 import pandas as pd
 import numpy as np
-from pathlib import Path
-
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-RAW_PATH = BASE_DIR / "data" / "raw" / "superstore_raw.csv"
-CLEANED_PATH = BASE_DIR / "data" / "cleaned" / "superstore_cleaned.csv"
-PROCESSED_DIR = BASE_DIR / "data" / "processed"
-
-
-@pytest.fixture(scope="module")
-def raw_data():
-    assert RAW_PATH.exists(), f"Raw file missing: {RAW_PATH}"
-    return pd.read_csv(RAW_PATH, encoding="utf-8")
+from python.data_loader import load_raw_data, load_processed_data
+from python.data_cleaning import clean_retail_data
+from python.feature_engineering import engineer_features, add_customer_metrics
+from python.data_quality import DataQualityAuditor
+from python.rfm_analysis import run_rfm_segmentation
 
 
 @pytest.fixture(scope="module")
-def cleaned_data():
-    assert CLEANED_PATH.exists(), f"Cleaned file missing: {CLEANED_PATH}"
-    df = pd.read_csv(CLEANED_PATH, dtype={"postal_code": str})
-    df["order_date"] = pd.to_datetime(df["order_date"])
-    df["ship_date"] = pd.to_datetime(df["ship_date"])
-    return df
+def raw_df():
+    return load_raw_data()
 
 
 @pytest.fixture(scope="module")
-def processed_tables():
-    tables = {}
-    names = ["fact_sales", "dim_date", "dim_customer", "dim_product", "dim_geography", "dim_ship_mode", "rfm_customer_segments"]
-    for name in names:
-        path = PROCESSED_DIR / f"{name}.csv"
-        assert path.exists(), f"Processed table missing: {path}"
-        tables[name] = pd.read_csv(path)
-    return tables
+def clean_df(raw_df):
+    return clean_retail_data(raw_df)
 
 
-# --- TEST SUITE ---
-
-def test_raw_data_shape(raw_data):
-    """Verify raw dataset has standard 9,994 rows and 21 columns."""
-    assert len(raw_data) == 9994, f"Expected 9,994 rows, found {len(raw_data)}"
-    assert len(raw_data.columns) == 21, f"Expected 21 columns, found {len(raw_data.columns)}"
+@pytest.fixture(scope="module")
+def enriched_df(clean_df):
+    return add_customer_metrics(engineer_features(clean_df))
 
 
-def test_cleaned_data_columns(cleaned_data):
-    """Verify cleaned dataset contains all standardized snake_case columns."""
+def test_raw_shape_and_columns(raw_df):
+    """Asserts raw dataset contains exactly 9,994 rows and required core columns."""
+    assert len(raw_df) == 9994
     expected_cols = [
-        "row_id", "order_id", "order_date", "ship_date", "ship_mode",
-        "customer_id", "customer_name", "segment", "country", "city",
-        "state", "postal_code", "region", "product_id", "category",
-        "sub_category", "product_name", "sales", "quantity", "discount", "profit"
+        "Row ID", "Order ID", "Order Date", "Ship Date", "Ship Mode",
+        "Customer ID", "Customer Name", "Segment", "Country", "City",
+        "State", "Postal Code", "Region", "Product ID", "Category",
+        "Sub-Category", "Product Name", "Sales", "Quantity", "Discount", "Profit"
     ]
     for col in expected_cols:
-        assert col in cleaned_data.columns, f"Missing required column: {col}"
+        assert col in raw_df.columns, f"Missing required raw column: {col}"
 
 
-def test_date_chronology(cleaned_data):
-    """Assert that ship date is never prior to order date."""
-    violations = cleaned_data[cleaned_data["ship_date"] < cleaned_data["order_date"]]
-    assert len(violations) == 0, f"Found {len(violations)} records where ship_date < order_date"
+def test_missing_values(raw_df):
+    """Asserts zero null or missing values across raw transactions."""
+    null_counts = raw_df.isnull().sum()
+    assert null_counts.sum() == 0, f"Detected missing values:\n{null_counts[null_counts > 0]}"
 
 
-def test_financial_constraints(cleaned_data):
-    """Assert sales >= 0, quantity >= 1, and discount is bounded in [0.0, 1.0]."""
-    assert (cleaned_data["sales"] >= 0).all(), "Negative sales values found!"
-    assert (cleaned_data["quantity"] > 0).all(), "Invalid quantity found (<= 0)!"
-    assert ((cleaned_data["discount"] >= 0.0) & (cleaned_data["discount"] <= 1.0)).all(), "Discounts out of bounds!"
+def test_duplicate_rows(raw_df):
+    """Asserts zero duplicate rows in the raw dataset."""
+    assert raw_df.duplicated().sum() == 0
+    row_id_col = "Row ID" if "Row ID" in raw_df.columns else "Row_ID"
+    assert raw_df[row_id_col].nunique() == 9994
 
 
-def test_star_schema_referential_integrity(processed_tables):
-    """Assert fact table foreign keys cleanly join to dimension tables without orphans."""
-    fact = processed_tables["fact_sales"]
-    cust = processed_tables["dim_customer"]
-    prod = processed_tables["dim_product"]
-    geo = processed_tables["dim_geography"]
-    ship = processed_tables["dim_ship_mode"]
-    date_dim = processed_tables["dim_date"]
-
-    assert fact["customer_key"].isin(cust["customer_key"]).all(), "Orphan customer_key detected!"
-    assert fact["product_key"].isin(prod["product_key"]).all(), "Orphan product_key detected!"
-    assert fact["geography_key"].isin(geo["geography_key"]).all(), "Orphan geography_key detected!"
-    assert fact["ship_mode_key"].isin(ship["ship_mode_key"]).all(), "Orphan ship_mode_key detected!"
-    assert fact["order_date_key"].isin(date_dim["date_key"]).all(), "Orphan order_date_key detected!"
+def test_date_validity(clean_df):
+    """Asserts all dates are valid and Order Date <= Ship Date."""
+    assert (clean_df["Ship_Date"] < clean_df["Order_Date"]).sum() == 0
+    assert clean_df["Order_Date"].min() == pd.Timestamp("2014-01-03")
+    assert clean_df["Order_Date"].max() == pd.Timestamp("2017-12-30")
 
 
-def test_fact_sales_primary_key(processed_tables):
-    """Assert sale_id in fact_sales is strictly unique."""
-    fact = processed_tables["fact_sales"]
-    assert fact["sale_id"].nunique() == len(fact), "Duplicate primary key sale_id in fact_sales!"
+def test_numerical_ranges(clean_df):
+    """Asserts Sales > 0, Quantity >= 1, and 0 <= Discount <= 1.0."""
+    assert (clean_df["Sales"] <= 0).sum() == 0
+    assert (clean_df["Quantity"] <= 0).sum() == 0
+    assert ((clean_df["Discount"] < 0) | (clean_df["Discount"] > 1.0)).sum() == 0
 
 
-def test_rfm_segmentation_integrity(processed_tables):
-    """Assert that RFM segments cover all 793 customers without nulls."""
-    rfm = processed_tables["rfm_customer_segments"]
-    assert len(rfm) == 793, f"Expected 793 segmented customers, found {len(rfm)}"
-    assert rfm["customer_segment"].isnull().sum() == 0, "Null customer segments found!"
-    assert rfm["monetary_sales"].sum() > 2200000, "RFM total monetary sales deviates from actual sales!"
+def test_baseline_kpi_consistency(clean_df):
+    """Asserts financial totals match baseline verified metrics."""
+    total_sales = clean_df["Sales"].sum()
+    total_profit = clean_df["Profit"].sum()
+    margin_pct = (total_profit / total_sales) * 100
+    total_orders = clean_df["Order_ID"].nunique()
+    total_customers = clean_df["Customer_ID"].nunique()
+    
+    assert np.isclose(total_sales, 2297200.86, atol=0.01)
+    assert np.isclose(total_profit, 286397.02, atol=0.01)
+    assert np.isclose(margin_pct, 12.47, atol=0.01)
+    assert total_orders == 5009
+    assert total_customers == 793
 
 
-def test_postal_code_formatting(cleaned_data):
-    """Assert postal codes are clean 5-digit strings or 'Unknown'."""
-    assert cleaned_data["postal_code"].isnull().sum() == 0, "Null postal codes found!"
-    non_standard = cleaned_data[~cleaned_data["postal_code"].astype(str).str.match(r"^(\d{5}|Unknown)$")]
-    assert len(non_standard) == 0, f"Found {len(non_standard)} invalid postal codes"
+def test_feature_engineering_integrity(enriched_df):
+    """Asserts derived temporal, operational, and customer attributes."""
+    assert "Order_to_Ship_Days" in enriched_df.columns
+    assert "Discount_Band" in enriched_df.columns
+    assert "Shipping_Delay_Category" in enriched_df.columns
+    assert "Customer_AOV" in enriched_df.columns
+    assert (enriched_df["Order_to_Ship_Days"] < 0).sum() == 0
+    assert enriched_df["Order_to_Ship_Days"].max() <= 7
 
+
+def test_rfm_segmentation_logic(clean_df):
+    """Asserts RFM customer segmentation assigns valid scores and labels to all 793 customers."""
+    rfm = run_rfm_segmentation(clean_df)
+    assert len(rfm) == 793
+    assert rfm["R_Score"].between(1, 5).all()
+    assert rfm["F_Score"].between(1, 5).all()
+    assert rfm["M_Score"].between(1, 5).all()
+    assert rfm["Segment_Label"].notnull().all()
+    valid_segments = {
+        "Champions", "Loyal Customers", "Potential Loyalists", "New Customers",
+        "Promising", "Need Attention", "About to Sleep", "Cannot Lose Them",
+        "At Risk", "Hibernating", "Lost"
+    }
+    assert set(rfm["Segment_Label"].unique()).issubset(valid_segments)

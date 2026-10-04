@@ -1,79 +1,85 @@
-# 🏗️ Solution Architecture & Data Pipeline
-**Project:** Retail Business Intelligence & Customer Analytics Platform
+# Technical System Architecture
+
+This document provides a comprehensive architectural overview of the **Retail Business Intelligence & Customer Analytics** enterprise analytics platform.
 
 ---
 
-## 1. System Architecture Overview
+## 1. High-Level System Architecture
 
 ```
-┌────────────────────────┐      ┌────────────────────────┐      ┌────────────────────────┐
-│   RAW DATA LAYER       │      │   PROCESSING LAYER     │      │   SERVING / BI LAYER   │
-│                        │      │                        │      │                        │
-│ • superstore_raw.csv   │ ───► │ • Data Cleaning        │ ───► │ • SQLite DB Engine     │
-│   (9,994 records)      │      │ • Feature Engineering  │      │ • Star Schema DW       │
-│ • Ingestion Validation │      │ • RFM Segmentation     │      │ • Power BI Dashboards  │
-│                        │      │ • Star Schema Split    │      │ • Excel Analytics      │
-└────────────────────────┘      └────────────────────────┘      └────────────────────────┘
-```
-
----
-
-## 2. Dimensional Data Warehouse Architecture (Star Schema)
-
-### Entity-Relationship Diagram (ERD)
-
-```
-                            +---------------------------------+
-                            |            DIM_DATE             |
-                            +---------------------------------+
-                            | PK  date_key (INT, YYYYMMDD)    |
-                            |     full_date (DATE)            |
-                            |     year (INT)                  |
-                            |     quarter (VARCHAR)           |
-                            |     month (INT)                 |
-                            |     month_name (VARCHAR)        |
-                            |     day (INT)                   |
-                            |     day_name (VARCHAR)          |
-                            |     day_of_week (INT)           |
-                            |     is_weekend (INT)            |
-                            |     year_month (VARCHAR)        |
-                            +----------------+----------------+
-                                             |
-                                             | 1
-                                             |
-                                             | *
-+------------------------------+ 1          +---------------------------------+          1 +-------------------------------+
-|         DIM_CUSTOMER         |<-----------|           FACT_SALES            |----------->|          DIM_PRODUCT          |
-+------------------------------+ *          +---------------------------------+          * +-------------------------------+
-| PK  customer_key (INT)       |            | PK  sale_id (INT)               |            | PK  product_key (INT)         |
-|     customer_id (VARCHAR)    |            |     row_id (INT)                |            |     product_id (VARCHAR)      |
-|     customer_name (VARCHAR)  |            |     order_id (VARCHAR)          |            |     product_name (VARCHAR)    |
-|     segment (VARCHAR)        |            | FK  order_date_key (INT)        |            |     category (VARCHAR)        |
-|     first_order_date (DATE)  |            | FK  ship_date_key (INT)         |            |     sub_category (VARCHAR)    |
-|     last_order_date (DATE)   |            | FK  customer_key (INT)          |            +-------------------------------+
-|     total_orders (INT)       |            | FK  product_key (INT)           |
-|     total_spend (NUMERIC)    |            | FK  geography_key (INT)         |
-|     total_profit (NUMERIC)   |            | FK  ship_mode_key (INT)         |
-+------------------------------+            |     sales (NUMERIC)             |
-                                            |     quantity (INT)              |
-+------------------------------+ 1          |     discount (NUMERIC)          |          1 +-------------------------------+
-|        DIM_GEOGRAPHY         |<-----------|     profit (NUMERIC)            |----------->|         DIM_SHIP_MODE         |
-+------------------------------+ *          |     ship_days (INT)             |          * +-------------------------------+
-| PK  geography_key (INT)      |            |     profit_margin (NUMERIC)     |            | PK  ship_mode_key (INT)       |
-|     country (VARCHAR)        |            |     profit_status (VARCHAR)     |            |     ship_mode (VARCHAR)       |
-|     region (VARCHAR)         |            |     discount_band (VARCHAR)     |            +-------------------------------+
-|     state (VARCHAR)          |            |     order_value_band (VARCHAR)  |
-|     city (VARCHAR)           |            |     shipping_delay_cat (VARCHAR)|
-|     postal_code (VARCHAR)    |            +---------------------------------+
-+------------------------------+
++-----------------------------------------------------------------------------+
+|                              DATA STORAGE LAYER                             |
+|  +---------------------------+       +-----------------------------------+  |
+|  | data/raw/                 | ----> | data/cleaned/ & data/processed/   |  |
+|  | Multi-codec Raw CSV (9.9K)|       | Standardized UTF-8 Datasets       |  |
+|  +---------------------------+       +-----------------------------------+  |
++-----------------------------------------------------------------------------+
+                                       │
+                                       ▼
++-----------------------------------------------------------------------------+
+|                          PYTHON ANALYTICS ENGINE                            |
+|  +------------------+  +-------------------+  +--------------------------+  |
+|  | data_loader.py   |  | data_quality.py   |  | data_cleaning.py         |  |
+|  +------------------+  +-------------------+  +--------------------------+  |
+|  +------------------+  +-------------------+  +--------------------------+  |
+|  | feature_eng.py   |  | rfm_analysis.py   |  | visualization.py         |  |
+|  +------------------+  +-------------------+  +--------------------------+  |
++-----------------------------------------------------------------------------+
+                                       │
+                                       ▼
++-----------------------------------------------------------------------------+
+|                        SQL & DIMENSIONAL MODEL LAYER                        |
+|  +-----------------------------------------------------------------------+  |
+|  | Star Schema: FACT_SALES, DIM_CUSTOMER, DIM_PRODUCT, DIM_DATE,         |  |
+|  |             DIM_GEOGRAPHY, DIM_SHIP_MODE                              |  |
+|  | 40+ Analytical Queries across 8 Structured Scripts                    |  |
+|  +-----------------------------------------------------------------------+  |
++-----------------------------------------------------------------------------+
+                                       │
+                                       ▼
++-----------------------------------------------------------------------------+
+|                         POWER BI PRESENTATION LAYER                         |
+|  +-------------------+  +---------------------+  +-----------------------+  |
+|  | Executive Cockpit |  | Margin Diagnostics  |  | Customer RFM Matrix   |  |
+|  +-------------------+  +---------------------+  +-----------------------+  |
+|  | Product Matrix    |  | Fulfillment SLA     |  | 20+ Production DAX    |  |
+|  +-------------------+  +---------------------+  +-----------------------+  |
++-----------------------------------------------------------------------------+
 ```
 
 ---
 
-## 3. Storage & Technology Stack
-- **Languages:** Python 3.13, SQL (ANSI / SQLite / PostgreSQL compatible), DAX (Power BI), M (Power Query)
-- **Database Engine:** SQLite 3 (production-grade local embedded analytics warehouse) / PostgreSQL compatible
-- **Python Libraries:** Pandas, NumPy, Matplotlib, Seaborn, OpenPyXL, Scipy, Scikit-Learn
-- **Reporting & Visualization:** Power BI Desktop, Microsoft Excel, Markdown Executive Summaries
-- **Version Control & CI/CD:** Git, GitHub
+## 2. Technology Stack
 
+| Layer | Technologies / Libraries | Version / Standard | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Ingestion & Data Processing** | Python, Pandas, NumPy | Python 3.10+ | Robust data parsing, cleaning, and transformation |
+| **Statistical Analysis** | SciPy, Pandas Quantiles | Standard | RFM quintiles, Pareto distribution, Z-Score outlier detection |
+| **Data Visualization** | Matplotlib, Seaborn | Matplotlib 3.8+ | Publication-quality static visual charts and distributions |
+| **Interactive Analytics** | Jupyter Notebooks (nbformat) | Notebook v4 | Step-by-step reproducible analysis workflows |
+| **Relational Database** | ANSI SQL / T-SQL / SQLite | SQL-92+ | Star Schema modeling, CTEs, Window Functions |
+| **Business Intelligence** | Microsoft Power BI Desktop | Latest | Interactive executive dashboards, DAX modeling |
+| **Testing & Quality Control** | Pytest, Unittest | Pytest 8.0+ | Automated unit tests and data quality assertions |
+| **Version Control** | Git, GitHub | Git 2.40+ | Version control and collaborative documentation |
+
+---
+
+## 3. Modular Python Architecture
+
+The `python/` package contains 7 specialized, decoupled modules:
+1. `data_loader.py`: Handles file resolution, multi-codec fallback (`windows-1252`, `utf-8`), and clean persistence.
+2. `data_quality.py`: Evaluates null counts, uniqueness, date sequences, negative values, and range violations.
+3. `data_cleaning.py`: Normalizes column names, trims strings, and casts standardized data types.
+4. `feature_engineering.py`: Computes calendar attributes, shipping lead times, margin ratios, and discount tiers.
+5. `customer_analysis.py`: Computes repeat customer rates, Pareto curve distributions, and top/bottom accounts.
+6. `rfm_analysis.py`: Calculates Recency, Frequency, and Monetary scores and maps customers to 11 strategic segments.
+7. `visualization.py`: Standardizes chart aesthetics, palettes, and formats for trend charts, categories, and Pareto curves.
+
+---
+
+## 4. Star Schema Architecture
+
+The analytical data warehouse follows Kimball dimensional modeling principles:
+- **Central Fact:** `FACT_SALES` at the transaction order line grain.
+- **Surrogate Keys:** High-speed integer keys linking 5 clean dimensions.
+- **Dimensional Conformance:** All metrics are filterable across customer segments, geographic regions, product categories, and temporal hierarchies.
