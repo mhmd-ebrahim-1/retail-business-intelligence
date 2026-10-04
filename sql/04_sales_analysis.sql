@@ -1,118 +1,99 @@
 -- ============================================================================
--- RETAIL BUSINESS INTELLIGENCE & CUSTOMER ANALYTICS PLATFORM
--- SCRIPT 04: Sales Performance & Regional Breakdown
+-- SCRIPT: 04_sales_analysis.sql
+-- PURPOSE: Detailed Revenue Analysis, Growth Trends, Seasonality, and Moving Averages
 -- ============================================================================
 
--- ----------------------------------------------------------------------------
--- 1. Sales Performance by Category & Sub-Category with Contribution %
--- ----------------------------------------------------------------------------
-WITH cat_sales AS (
+-- Q7. Monthly Revenue Trends and Month-over-Month (MoM) Growth
+WITH monthly_metrics AS (
     SELECT 
-        p.category,
-        p.sub_category,
-        ROUND(SUM(f.sales), 2) AS subcategory_sales,
-        ROUND(SUM(f.profit), 2) AS subcategory_profit,
-        SUM(f.quantity) AS total_quantity,
-        ROUND((SUM(f.profit) / SUM(f.sales)) * 100.0, 2) AS profit_margin_pct
-    FROM fact_sales f
-    JOIN dim_product p ON f.product_key = p.product_key
-    GROUP BY p.category, p.sub_category
-),
-total_calc AS (
-    SELECT SUM(sales) AS grand_total_sales FROM fact_sales
+        year_month,
+        year,
+        month,
+        ROUND(SUM(sales), 2) AS monthly_sales,
+        ROUND(SUM(profit), 2) AS monthly_profit
+    FROM ecommerce_sales
+    GROUP BY year_month, year, month
 )
 SELECT 
-    c.category,
-    c.sub_category,
-    c.subcategory_sales,
-    ROUND((c.subcategory_sales / t.grand_total_sales) * 100.0, 2) AS pct_of_total_sales,
-    c.subcategory_profit,
-    c.profit_margin_pct,
-    c.total_quantity,
-    RANK() OVER (PARTITION BY c.category ORDER BY c.subcategory_sales DESC) AS rank_within_category
-FROM cat_sales c
-CROSS JOIN total_calc t
-ORDER BY c.category, c.subcategory_sales DESC;
+    year_month,
+    monthly_sales,
+    monthly_profit,
+    LAG(monthly_sales, 1) OVER (ORDER BY year_month) AS prev_month_sales,
+    ROUND((monthly_sales - LAG(monthly_sales, 1) OVER (ORDER BY year_month)) / 
+          NULLIF(LAG(monthly_sales, 1) OVER (ORDER BY year_month), 0) * 100, 2) AS mom_sales_growth_pct
+FROM monthly_metrics
+ORDER BY year_month;
 
-
--- ----------------------------------------------------------------------------
--- 2. Regional Sales & Profit Performance
--- ----------------------------------------------------------------------------
-SELECT 
-    g.region,
-    COUNT(DISTINCT f.order_id) AS total_orders,
-    COUNT(DISTINCT f.customer_key) AS customer_reach,
-    ROUND(SUM(f.sales), 2) AS regional_sales,
-    ROUND((SUM(f.sales) / (SELECT SUM(sales) FROM fact_sales)) * 100.0, 2) AS sales_share_pct,
-    ROUND(SUM(f.profit), 2) AS regional_profit,
-    ROUND((SUM(f.profit) / SUM(f.sales)) * 100.0, 2) AS regional_margin_pct,
-    ROUND(AVG(f.discount) * 100.0, 2) AS avg_discount_pct
-FROM fact_sales f
-JOIN dim_geography g ON f.geography_key = g.geography_key
-GROUP BY g.region
-ORDER BY regional_sales DESC;
-
-
--- ----------------------------------------------------------------------------
--- 3. Top 10 States by Sales Revenue and Profitability
--- ----------------------------------------------------------------------------
-WITH state_performance AS (
+-- Q8. Year-over-Year (YoY) Sales Growth by Month
+WITH monthly_data AS (
     SELECT 
-        g.state,
-        g.region,
-        ROUND(SUM(f.sales), 2) AS state_sales,
-        ROUND(SUM(f.profit), 2) AS state_profit,
-        ROUND((SUM(f.profit) / SUM(f.sales)) * 100.0, 2) AS state_margin_pct,
-        COUNT(DISTINCT f.order_id) AS order_count
-    FROM fact_sales f
-    JOIN dim_geography g ON f.geography_key = g.geography_key
-    GROUP BY g.state, g.region
+        year,
+        month,
+        month_name,
+        SUM(sales) AS current_year_sales
+    FROM ecommerce_sales
+    GROUP BY year, month, month_name
 )
 SELECT 
-    state,
-    region,
-    state_sales,
-    state_profit,
-    state_margin_pct,
-    order_count,
-    DENSE_RANK() OVER (ORDER BY state_sales DESC) AS sales_rank
-FROM state_performance
-ORDER BY state_sales DESC
-LIMIT 10;
+    m1.year,
+    m1.month,
+    m1.month_name,
+    ROUND(m1.current_year_sales, 2) AS sales,
+    ROUND(m2.current_year_sales, 2) AS prior_year_sales,
+    ROUND((m1.current_year_sales - m2.current_year_sales) / NULLIF(m2.current_year_sales, 0) * 100, 2) AS yoy_sales_growth_pct
+FROM monthly_data m1
+LEFT JOIN monthly_data m2 
+    ON m1.month = m2.month AND m1.year = m2.year + 1
+ORDER BY m1.year, m1.month;
 
-
--- ----------------------------------------------------------------------------
--- 4. Top 10 Best-Selling Products
--- ----------------------------------------------------------------------------
+-- Q9. Cumulative Running Total Sales by Year
 SELECT 
-    p.product_id,
-    p.product_name,
-    p.category,
-    p.sub_category,
-    ROUND(SUM(f.sales), 2) AS total_sales,
-    ROUND(SUM(f.profit), 2) AS total_profit,
-    SUM(f.quantity) AS total_units_sold,
-    ROUND((SUM(f.profit) / SUM(f.sales)) * 100.0, 2) AS margin_pct
-FROM fact_sales f
-JOIN dim_product p ON f.product_key = p.product_key
-GROUP BY p.product_id, p.product_name, p.category, p.sub_category
-ORDER BY total_sales DESC
-LIMIT 10;
+    year_month,
+    year,
+    month,
+    ROUND(SUM(sales), 2) AS monthly_sales,
+    ROUND(SUM(SUM(sales)) OVER (PARTITION BY year ORDER BY month), 2) AS ytd_running_sales
+FROM ecommerce_sales
+GROUP BY year_month, year, month
+ORDER BY year_month;
 
-
--- ----------------------------------------------------------------------------
--- 5. Customer Segment Performance by Year
--- ----------------------------------------------------------------------------
+-- Q10. 3-Month Moving Average of Sales
+WITH monthly_sales AS (
+    SELECT 
+        year_month,
+        SUM(sales) AS total_sales
+    FROM ecommerce_sales
+    GROUP BY year_month
+)
 SELECT 
-    d.year,
-    c.segment,
-    COUNT(DISTINCT f.order_id) AS total_orders,
-    ROUND(SUM(f.sales), 2) AS segment_sales,
-    ROUND(SUM(f.profit), 2) AS segment_profit,
-    ROUND((SUM(f.profit) / SUM(f.sales)) * 100.0, 2) AS segment_margin_pct
-FROM fact_sales f
-JOIN dim_customer c ON f.customer_key = c.customer_key
-JOIN dim_date d ON f.order_date_key = d.date_key
-GROUP BY d.year, c.segment
-ORDER BY d.year, segment_sales DESC;
+    year_month,
+    ROUND(total_sales, 2) AS monthly_sales,
+    ROUND(AVG(total_sales) OVER (
+        ORDER BY year_month 
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ), 2) AS sales_3m_moving_avg
+FROM monthly_sales
+ORDER BY year_month;
 
+-- Q11. Day of Week Sales Pattern
+SELECT 
+    day_of_week,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales), 2) AS total_sales,
+    ROUND(SUM(profit), 2) AS total_profit,
+    ROUND(AVG(sales), 2) AS avg_sales_per_item
+FROM ecommerce_sales
+GROUP BY day_of_week
+ORDER BY total_sales DESC;
+
+-- Q12. Sub-Category Contribution to Parent Category Revenue
+SELECT 
+    category,
+    sub_category,
+    ROUND(SUM(sales), 2) AS subcategory_sales,
+    ROUND(SUM(sales) * 100.0 / SUM(SUM(sales)) OVER (PARTITION BY category), 2) AS category_share_pct,
+    ROUND(SUM(profit), 2) AS subcategory_profit,
+    ROUND(SUM(profit) / SUM(sales) * 100, 2) AS profit_margin_pct
+FROM ecommerce_sales
+GROUP BY category, sub_category
+ORDER BY category, subcategory_sales DESC;
