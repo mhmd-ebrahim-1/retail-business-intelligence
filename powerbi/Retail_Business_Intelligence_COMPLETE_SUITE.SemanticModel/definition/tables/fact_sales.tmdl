@@ -1,0 +1,185 @@
+table fact_sales
+	lineageTag: f67cd816-785e-43a6-9e26-a544c43ba52b
+
+	column sale_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 8cefcc4d-0682-43fd-8f1a-39f3de629477
+		summarizeBy: sum
+		sourceColumn: sale_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column row_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 0a4c3c89-e76d-48f7-af50-64ad7f9abee4
+		summarizeBy: sum
+		sourceColumn: row_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column order_id
+		dataType: string
+		lineageTag: 66bcad6f-28ac-49ad-b8e5-3c27f81f7027
+		summarizeBy: none
+		sourceColumn: order_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column order_date_key
+		dataType: int64
+		formatString: 0
+		lineageTag: deccc802-011a-4179-8d57-c9f2f8027581
+		summarizeBy: none
+		sourceColumn: order_date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column ship_date_key
+		dataType: int64
+		formatString: 0
+		lineageTag: f9887879-e311-4557-875d-b318829a3a8f
+		summarizeBy: sum
+		sourceColumn: ship_date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column customer_key
+		dataType: int64
+		formatString: 0
+		lineageTag: e4e3cbfc-c732-4b80-96c9-bad09e303c10
+		summarizeBy: none
+		sourceColumn: customer_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column product_key
+		dataType: int64
+		formatString: 0
+		lineageTag: b16591cb-b3e4-4c30-9895-65253417e12a
+		summarizeBy: none
+		sourceColumn: product_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column geography_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 7450abd5-5b58-4d9f-8b93-6a38c9d56fae
+		summarizeBy: none
+		sourceColumn: geography_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column ship_mode_key
+		dataType: int64
+		formatString: 0
+		lineageTag: ff5fc406-6c22-4ac4-9e2c-023079861caf
+		summarizeBy: none
+		sourceColumn: ship_mode_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column sales
+		dataType: double
+		lineageTag: 3b030ff6-57c1-40f6-8ef3-e3bdffe21352
+		summarizeBy: sum
+		sourceColumn: sales
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column quantity
+		dataType: int64
+		formatString: 0
+		lineageTag: e2150fa3-8419-47c1-9828-762cd8ceb568
+		summarizeBy: sum
+		sourceColumn: quantity
+
+		annotation SummarizationSetBy = Automatic
+
+	column discount
+		dataType: double
+		lineageTag: 8e1d34a2-9f80-432f-8cfa-4d6536062ac3
+		summarizeBy: sum
+		sourceColumn: discount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column profit
+		dataType: double
+		lineageTag: 003acb28-8dc3-408b-8ce7-35e8222faaec
+		summarizeBy: sum
+		sourceColumn: profit
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column ship_days
+		dataType: int64
+		formatString: 0
+		lineageTag: 5a1166a9-3eec-45aa-b34e-f0562655e463
+		summarizeBy: sum
+		sourceColumn: ship_days
+
+		annotation SummarizationSetBy = Automatic
+
+	column profit_margin
+		dataType: double
+		lineageTag: a23aec16-5ef3-4aa4-97c1-e3fa016271dd
+		summarizeBy: sum
+		sourceColumn: profit_margin
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column profit_status
+		dataType: string
+		lineageTag: a195caa5-fa1f-498b-ae2e-5b00c2d9a39b
+		summarizeBy: none
+		sourceColumn: profit_status
+
+		annotation SummarizationSetBy = Automatic
+
+	column discount_band
+		dataType: string
+		lineageTag: 2f6bab19-cc8c-4e8d-96ad-b97fae7ef904
+		summarizeBy: none
+		sourceColumn: discount_band
+
+		annotation SummarizationSetBy = Automatic
+
+	column order_value_band
+		dataType: string
+		lineageTag: f667d1fc-911f-4a2a-ad62-d1275d139c5b
+		summarizeBy: none
+		sourceColumn: order_value_band
+
+		annotation SummarizationSetBy = Automatic
+
+	column shipping_delay_category
+		dataType: string
+		lineageTag: 207d8f36-05c1-4dca-a281-e4702b57bf2d
+		summarizeBy: none
+		sourceColumn: shipping_delay_category
+
+		annotation SummarizationSetBy = Automatic
+
+	partition fact_sales = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("D:\Downloads\retail-business-intelligence\data\processed\fact_sales.csv"),[Delimiter=",", Columns=19, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+				    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"sale_id", Int64.Type}, {"row_id", Int64.Type}, {"order_id", type text}, {"order_date_key", Int64.Type}, {"ship_date_key", Int64.Type}, {"customer_key", Int64.Type}, {"product_key", Int64.Type}, {"geography_key", Int64.Type}, {"ship_mode_key", Int64.Type}, {"sales", type number}, {"quantity", Int64.Type}, {"discount", type number}, {"profit", type number}, {"ship_days", Int64.Type}, {"profit_margin", type number}, {"profit_status", type text}, {"discount_band", type text}, {"order_value_band", type text}, {"shipping_delay_category", type text}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_ResultType = Table
+

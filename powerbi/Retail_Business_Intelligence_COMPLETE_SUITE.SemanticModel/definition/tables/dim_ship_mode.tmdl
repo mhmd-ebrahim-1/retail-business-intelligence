@@ -1,0 +1,32 @@
+table dim_ship_mode
+	lineageTag: 9b58f67d-c216-4b2e-943b-c5987f8d898d
+
+	column ship_mode_key
+		dataType: int64
+		formatString: 0
+		lineageTag: e33f835e-985f-45a3-b264-1e1494c977f4
+		summarizeBy: none
+		sourceColumn: ship_mode_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column ship_mode
+		dataType: string
+		lineageTag: db946e01-df21-4aa3-b37b-468e69b5932b
+		summarizeBy: none
+		sourceColumn: ship_mode
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_ship_mode = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("D:\Downloads\retail-business-intelligence\data\processed\dim_ship_mode.csv"),[Delimiter=",", Columns=2, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+				    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"ship_mode_key", Int64.Type}, {"ship_mode", type text}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_ResultType = Table
+

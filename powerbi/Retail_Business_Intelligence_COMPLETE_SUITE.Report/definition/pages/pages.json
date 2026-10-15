@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
+  "pageOrder": [
+    "executive_overview",
+    "sales_profitability",
+    "customer_intelligence",
+    "product_performance",
+    "operations_fulfillment"
+  ],
+  "activePageName": "executive_overview"
+}

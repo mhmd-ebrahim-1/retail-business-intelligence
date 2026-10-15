@@ -1,0 +1,201 @@
+table _Measures
+
+	measure 'Total Sales' =
+			
+			SUM ( fact_sales[sales] )
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Total Profit' =
+			
+			SUM ( fact_sales[profit] )
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Profit Margin %' =
+			
+			DIVIDE ( [Total Profit], [Total Sales], 0 )
+		dataType: double
+		formatString: 0.00%
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Total Units Sold' =
+			
+			SUM ( fact_sales[quantity] )
+		dataType: int64
+		formatString: #,##0
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Average Discount %' =
+			
+			AVERAGE ( fact_sales[discount] )
+		dataType: double
+		formatString: 0.00%
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Total Orders' =
+			
+			DISTINCTCOUNT ( fact_sales[order_id] )
+		dataType: int64
+		formatString: #,##0
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Total Customers' =
+			
+			DISTINCTCOUNT ( fact_sales[customer_key] )
+		dataType: int64
+		formatString: #,##0
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Average Order Value' =
+			
+			DIVIDE ( [Total Sales], [Total Orders], 0 )
+		dataType: double
+		formatString: $#,##0.00
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Avg Items Per Order' =
+			
+			DIVIDE ( [Total Units Sold], [Total Orders], 0 )
+		dataType: double
+		formatString: 0.0
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Sales PY' =
+			
+			CALCULATE (
+			    [Total Sales],
+			    SAMEPERIODLASTYEAR ( dim_date[full_date] )
+			)
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 2. Time Intelligence & Growth
+
+	measure 'Sales YoY Growth $' =
+			
+			VAR CurrentSales = [Total Sales]
+			VAR PriorSales = [Sales PY]
+			RETURN
+			    IF (
+			        NOT ISBLANK ( PriorSales ),
+			        CurrentSales - PriorSales,
+			        BLANK ()
+			    )
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 2. Time Intelligence & Growth
+
+	measure 'Sales YoY Growth %' =
+			
+			VAR CurrentSales = [Total Sales]
+			VAR PriorSales = [Sales PY]
+			RETURN
+			    DIVIDE ( CurrentSales - PriorSales, PriorSales, 0 )
+		dataType: double
+		formatString: +0.00%;-0.00%;0.00%
+		displayFolder: 2. Time Intelligence & Growth
+
+	measure 'Profit PY' =
+			
+			CALCULATE (
+			    [Total Profit],
+			    SAMEPERIODLASTYEAR ( dim_date[full_date] )
+			)
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 2. Time Intelligence & Growth
+
+	measure 'Profit YoY Growth %' =
+			
+			VAR CurrentProfit = [Total Profit]
+			VAR PriorProfit = [Profit PY]
+			RETURN
+			    DIVIDE (
+			        CurrentProfit - PriorProfit,
+			        ABS ( PriorProfit ),
+			        0
+			    )
+		dataType: double
+		formatString: +0.00%;-0.00%;0.00%
+		displayFolder: 2. Time Intelligence & Growth
+
+	measure 'Delayed Order Count' = CALCULATE([Total Orders], fact_sales[ship_days] > 5)
+		dataType: int64
+		formatString: #,##0
+		displayFolder: 5. Operations & Logistics
+
+	measure 'Average Shipping Days' = AVERAGE(fact_sales[ship_days])
+		dataType: double
+		formatString: 0.0
+		displayFolder: 5. Operations & Logistics
+
+	measure 'Loss-Making Sales Volume' = CALCULATE([Total Sales], fact_sales[profit] < 0)
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 3. Profitability & Risk
+
+	measure 'Total Profit Loss Amount' = CALCULATE([Total Profit], fact_sales[profit] < 0)
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 3. Profitability & Risk
+
+	measure 'Sales YTD' = TOTALYTD([Total Sales], dim_date[full_date])
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 2. Time Intelligence & Growth
+
+	measure 'Customer Revenue' = DIVIDE([Total Sales], [Total Customers])
+		dataType: double
+		formatString: $#,##0.00
+		displayFolder: 4. Customer Intelligence
+
+	measure 'Repeat Customer Rate %' = VAR Customers = VALUES(fact_sales[customer_key]) VAR RepeatCustomers = FILTER(Customers, CALCULATE([Total Orders]) > 1) RETURN DIVIDE(COUNTROWS(RepeatCustomers), COUNTROWS(Customers))
+		dataType: double
+		formatString: 0.00%
+		displayFolder: 4. Customer Intelligence
+
+	measure 'Sales 3M Moving Average' = VAR WindowEnd = EOMONTH(MAX(dim_date[full_date]), 0) VAR WindowStart = EOMONTH(WindowEnd, -3) + 1 VAR ModelStart = CALCULATE(MIN(dim_date[full_date]), REMOVEFILTERS(dim_date)) RETURN IF(WindowStart >= ModelStart, DIVIDE(CALCULATE([Total Sales], REMOVEFILTERS(dim_date), DATESBETWEEN(dim_date[full_date], WindowStart, WindowEnd)), 3))
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 2. Time Intelligence & Growth
+
+	measure 'Revenue at Risk' = VAR MaxDate = MAX(dim_date[full_date]) VAR DormantCustomers = FILTER(VALUES(dim_customer[customer_key]), VAR LastOrder = CALCULATE(MAX(dim_customer[last_order_date])) RETURN DATEDIFF(LastOrder, MaxDate, DAY) > 180) RETURN CALCULATE([Total Sales], DormantCustomers)
+		dataType: double
+		formatString: $#,##0
+		displayFolder: 4. Customer Intelligence
+
+	measure 'Top 10 Customer Revenue Share %' = 
+			VAR Top10CustSales = CALCULATE([Total Sales], TOPN(10, ALL(dim_customer[customer_name]), [Total Sales]))
+			RETURN DIVIDE(Top10CustSales, CALCULATE([Total Sales], ALL(dim_customer)), 0)
+		dataType: double
+		formatString: 0.00%
+		displayFolder: 4. Customer Intelligence
+
+	measure 'Best Category by Sales' = 
+			CALCULATE(TOPN(1, VALUES(dim_product[category]), [Total Sales]), ALLSELECTED(dim_product[category]))
+		dataType: string
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'Best Region by Profit' = 
+			CALCULATE(TOPN(1, VALUES(dim_geography[region]), [Total Profit]), ALLSELECTED(dim_geography[region]))
+		dataType: string
+		displayFolder: 1. Core Financial KPIs
+
+	measure 'On-Time Delivery Rate %' = 
+			DIVIDE(CALCULATE([Total Orders], fact_sales[ship_days] <= 5), [Total Orders], 0)
+		dataType: double
+		formatString: 0.00%
+		displayFolder: 5. Operations & Logistics
+
+	column Value
+		dataType: int64
+		isNameInferred
+		isDataTypeInferred
+		sourceColumn: [Value]
+
+	partition _Measures = calculated
+		mode: import
+		source = { 1 }
+

@@ -1,0 +1,35 @@
+relationship 1d866c01-4702-4c72-8749-a401b0cbb8f5
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_customer.first_order_date
+	toColumn: LocalDateTable_5f3aa523-825f-4214-a6ff-b45f980f80cf.Date
+
+relationship 597ea0f1-6f8d-4b0d-b3e8-1d21bf85dc92
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_customer.last_order_date
+	toColumn: LocalDateTable_2ead8b68-f2ca-4941-8c23-4afe0994e47e.Date
+
+relationship AutoDetected_e74b1a4e-87b9-4b35-97e4-d801ba18d2b5
+	fromColumn: fact_sales.customer_key
+	toColumn: dim_customer.customer_key
+
+relationship AutoDetected_758a4fb0-5d6e-4895-b2ca-c8ad6a7044c0
+	fromColumn: fact_sales.product_key
+	toColumn: dim_product.product_key
+
+relationship AutoDetected_d04595d9-7cd7-4315-a2ff-94b1cb9e7d5f
+	fromColumn: fact_sales.geography_key
+	toColumn: dim_geography.geography_key
+
+relationship AutoDetected_a6d2fa8f-a12b-43b8-803a-3b30e7a1e693
+	fromColumn: fact_sales.ship_mode_key
+	toColumn: dim_ship_mode.ship_mode_key
+
+relationship 915293fe-a5a8-64a4-ed18-01054e6cbc90
+	fromColumn: fact_sales.order_date_key
+	toColumn: dim_date.date_key
+
+relationship 4b290688-0ed1-e294-ba9d-cf1e38809d81
+	isActive: false
+	fromColumn: fact_sales.ship_date_key
+	toColumn: dim_date.date_key
+

@@ -1,0 +1,65 @@
+table dim_geography
+	lineageTag: e854d8d7-f5d5-418f-9d99-563864869ce5
+
+	column geography_key
+		dataType: int64
+		formatString: 0
+		lineageTag: 33dacefa-713e-46e9-aa37-b3533aeab7d7
+		summarizeBy: none
+		sourceColumn: geography_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column country
+		dataType: string
+		lineageTag: 3704353e-f489-468d-9d75-d728ba8fb99e
+		summarizeBy: none
+		sourceColumn: country
+
+		annotation SummarizationSetBy = Automatic
+
+	column region
+		dataType: string
+		lineageTag: 7ce3e841-fa78-403a-a8fa-a73fcfb6db4f
+		summarizeBy: none
+		sourceColumn: region
+
+		annotation SummarizationSetBy = Automatic
+
+	column state
+		dataType: string
+		lineageTag: 67f8125c-2e6f-48b2-8109-db41bb967887
+		summarizeBy: none
+		sourceColumn: state
+
+		annotation SummarizationSetBy = Automatic
+
+	column city
+		dataType: string
+		lineageTag: 36395e4b-6f46-48a3-98c0-a143efe9d890
+		summarizeBy: none
+		sourceColumn: city
+
+		annotation SummarizationSetBy = Automatic
+
+	column postal_code
+		dataType: int64
+		formatString: 0
+		lineageTag: 7d4d49eb-3731-4904-8b20-e96f7d3edf51
+		summarizeBy: none
+		sourceColumn: postal_code
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_geography = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("D:\Downloads\retail-business-intelligence\data\processed\dim_geography.csv"),[Delimiter=",", Columns=6, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+				    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+				    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"geography_key", Int64.Type}, {"country", type text}, {"region", type text}, {"state", type text}, {"city", type text}, {"postal_code", Int64.Type}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_ResultType = Table
+
